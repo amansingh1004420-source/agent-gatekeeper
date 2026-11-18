@@ -7,3 +7,15 @@ date_time,agent_name,action,amount,decision,rule,reason
 2026-11-17 22:16:38,alexa_shopper,place order,12000,ASK CUSTOMER,R5,Action is 'place order' or 'return' and amount > 5000 INR
 2026-11-17 22:16:38,alexa_shopper,refund,500,ASK CUSTOMER,R6,Action is 'refund' (any amount)
 2026-11-17 22:16:38,alexa_shopper,delete account,0,BLOCK,R7,Unknown action
+2026-11-18 21:55:47,unknown_agent,view order,0,BLOCK,R1,Agent not registered (unknown)
+2026-11-18 21:55:47,compromised_bot,view order,0,BLOCK,R2,Agent is revoked
+2026-11-18 21:55:47,alexa_shopper,view order,0,ALLOW,R3,Action is 'view order'
+2026-11-18 21:55:47,alexa_shopper,place order,2500,ALLOW,R4,Action is 'place order' or 'return' and amount <= 5000 INR
+2026-11-18 21:55:47,alexa_shopper,return,5000,ALLOW,R4,Action is 'place order' or 'return' and amount <= 5000 INR
+2026-11-18 21:55:47,alexa_shopper,place order,12000,ASK CUSTOMER,R5,Action is 'place order' or 'return' and amount > 5000 INR
+2026-11-18 21:55:47,alexa_shopper,refund,500,ASK CUSTOMER,R6,Action is 'refund' (any amount)
+2026-11-18 21:55:47,alexa_shopper,delete account,0,BLOCK,R7,Unknown action
+2026-11-18 21:55:47,test_agent,register,0,REGISTER,-,Agent registered
+2026-11-18 21:55:47,test_agent,view order,0,ALLOW,R3,Action is 'view order'
+2026-11-18 21:55:47,test_agent,revoke,0,REVOKE,-,Agent revoked
+2026-11-18 21:55:47,test_agent,view order,0,BLOCK,R2,Agent is revoked

@@ -1,42 +1,92 @@
 """
 Agent Gatekeeper
 ================
-A small prototype that evaluates requests from customer AI agents
+A prototype that evaluates requests from customer AI agents
 and decides whether an action is ALLOW, ASK CUSTOMER, or BLOCK.
-Also logs every evaluated decision to an audit log CSV file.
+
+Features:
+- Rules R1 to R7 for evaluation decisions
+- Audit logging to audit_log.csv
+- Agent registry management (load, save, register, revoke) in agents.json
 """
 
 import csv
 from datetime import datetime
+import json
 import os
+
+# Filenames used for data persistence
+AGENTS_FILE = "agents.json"
+AUDIT_LOG_FILE = "audit_log.csv"
+
+
+def load_agents():
+    """
+    Loads all registered agents from agents.json.
+    If agents.json does not exist yet, creates it with two sample agents:
+      - alexa_shopper (active)
+      - compromised_bot (revoked)
+
+    Returns:
+        dict: A dictionary of agents, keyed by agent name.
+    """
+    if not os.path.exists(AGENTS_FILE):
+        # Default sample agents created on first run
+        sample_agents = {
+            "alexa_shopper": {
+                "name": "alexa_shopper",
+                "status": "active",
+                "registered_at": "2026-11-15 10:00:00",
+                "revoked_at": ""
+            },
+            "compromised_bot": {
+                "name": "compromised_bot",
+                "status": "revoked",
+                "registered_at": "2026-11-15 09:00:00",
+                "revoked_at": "2026-11-15 10:30:00"
+            }
+        }
+        save_agents(sample_agents)
+        return sample_agents
+
+    # Read and parse existing agents.json
+    with open(AGENTS_FILE, mode="r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_agents(agents):
+    """
+    Saves the agents dictionary to agents.json with clean formatting.
+
+    Parameters:
+        agents (dict): Dictionary of agents to save.
+    """
+    with open(AGENTS_FILE, mode="w", encoding="utf-8") as f:
+        json.dump(agents, f, indent=4)
 
 
 def log_decision(agent_name, action, amount, decision, rule, reason):
     """
-    Appends one decision record to the audit_log.csv file.
+    Appends one record to audit_log.csv.
     If the file does not exist yet, creates it and writes the header row first.
 
     Parameters:
         agent_name (str): Name or identifier of the AI agent.
-        action (str): The requested action.
-        amount (int or float): The transaction amount in INR.
-        decision (str): "ALLOW", "ASK CUSTOMER", or "BLOCK".
-        rule (str): The rule that triggered (e.g., "R1" to "R7").
-        reason (str): A short explanation of the decision.
+        action (str): The requested action (or 'register' / 'revoke').
+        amount (int or float): The transaction amount in INR (0 if not applicable).
+        decision (str): "ALLOW", "ASK CUSTOMER", "BLOCK", "REGISTER", or "REVOKE".
+        rule (str): The rule identifier (e.g., "R1" to "R7", or "-" for admin actions).
+        reason (str): A short explanation of the decision or action.
     """
-    log_filename = "audit_log.csv"
+    file_exists = os.path.exists(AUDIT_LOG_FILE)
 
-    # Check whether the audit log file already exists
-    file_exists = os.path.exists(log_filename)
-
-    # Get the current local date and time in YYYY-MM-DD HH:MM:SS format
+    # Current local date and time in YYYY-MM-DD HH:MM:SS format
     date_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Open the CSV file in append mode ('a') so new entries are added at the end
-    with open(log_filename, mode="a", newline="", encoding="utf-8") as csv_file:
+    with open(AUDIT_LOG_FILE, mode="a", newline="", encoding="utf-8") as csv_file:
         writer = csv.writer(csv_file)
 
-        # If the file is newly created, write the header row first
+        # Write CSV header row if the file is new
         if not file_exists:
             writer.writerow([
                 "date_time",
@@ -48,7 +98,7 @@ def log_decision(agent_name, action, amount, decision, rule, reason):
                 "reason"
             ])
 
-        # Append the new decision row
+        # Write data row
         writer.writerow([
             date_time,
             agent_name,
@@ -60,17 +110,103 @@ def log_decision(agent_name, action, amount, decision, rule, reason):
         ])
 
 
-def decide(agent_name, action, amount, agents):
+def register_agent(agent_name):
+    """
+    Registers a new agent with status 'active'.
+    If the agent already exists, it is not added again.
+    Logs the registration to audit_log.csv.
+
+    Parameters:
+        agent_name (str): The unique name of the agent to register.
+
+    Returns:
+        dict: The agent data dictionary.
+    """
+    agents = load_agents()
+
+    # Do not add again if already registered
+    if agent_name in agents:
+        print(f"[REGISTER] Agent '{agent_name}' already exists. Skipping registration.")
+        return agents[agent_name]
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_agent = {
+        "name": agent_name,
+        "status": "active",
+        "registered_at": now,
+        "revoked_at": ""
+    }
+
+    # Save to agents.json
+    agents[agent_name] = new_agent
+    save_agents(agents)
+    print(f"[REGISTER] Agent '{agent_name}' registered successfully.")
+
+    # Log to audit_log.csv
+    log_decision(
+        agent_name=agent_name,
+        action="register",
+        amount=0,
+        decision="REGISTER",
+        rule="-",
+        reason="Agent registered"
+    )
+
+    return new_agent
+
+
+def revoke_agent(agent_name):
+    """
+    Revokes an agent's access by updating its status to 'revoked'
+    and recording the revoked_at timestamp.
+    If the agent does not exist, displays a clear message.
+    Logs the revocation to audit_log.csv.
+
+    Parameters:
+        agent_name (str): The name of the agent to revoke.
+
+    Returns:
+        dict or None: The updated agent data, or None if agent not found.
+    """
+    agents = load_agents()
+
+    # Show clear message if agent not found
+    if agent_name not in agents:
+        print(f"[REVOKE] Cannot revoke: Agent '{agent_name}' does not exist.")
+        return None
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    agents[agent_name]["status"] = "revoked"
+    agents[agent_name]["revoked_at"] = now
+
+    # Save to agents.json
+    save_agents(agents)
+    print(f"[REVOKE] Agent '{agent_name}' revoked successfully.")
+
+    # Log to audit_log.csv
+    log_decision(
+        agent_name=agent_name,
+        action="revoke",
+        amount=0,
+        decision="REVOKE",
+        rule="-",
+        reason="Agent revoked"
+    )
+
+    return agents[agent_name]
+
+
+def decide(agent_name, action, amount=0, agents=None):
     """
     Decides whether an agent's request is allowed, blocked, or requires customer confirmation.
+    Loads agents from agents.json if not provided.
     Automatically logs every decision to audit_log.csv before returning.
 
     Parameters:
         agent_name (str): Name or identifier of the AI agent.
         action (str): The requested action (e.g., 'view order', 'place order', 'return', 'refund').
-        amount (int or float): The transaction amount in INR (can be 0 or None if not applicable).
-        agents (dict): Known agents database, mapping an agent name to its status
-                       (e.g., {"shopping_bot": "active", "old_bot": "revoked"}).
+        amount (int or float): The transaction amount in INR (defaults to 0 if not applicable).
+        agents (dict, optional): Known agents database. If None, loaded from agents.json.
 
     Returns:
         tuple: (decision, rule_number, reason)
@@ -78,10 +214,14 @@ def decide(agent_name, action, amount, agents):
             - rule_number (str): The rule that triggered (e.g., "R1" through "R7")
             - reason (str): A short explanation of the decision
     """
-    # Normalize action text to lowercase and remove leading/trailing spaces for clean comparisons
+    # Load agents from agents.json if not explicitly provided
+    if agents is None:
+        agents = load_agents()
+
+    # Normalize action text to lowercase and remove spaces for safe comparison
     clean_action = action.strip().lower() if isinstance(action, str) else ""
 
-    # Ensure amount is a valid number for comparison (default to 0 if None)
+    # Ensure amount is numeric (default to 0 if None)
     clean_amount = amount if amount is not None else 0
 
     # -------------------------------------------------------------
@@ -93,7 +233,7 @@ def decide(agent_name, action, amount, agents):
     else:
         agent_record = agents[agent_name]
 
-        # Check status if the record is a dictionary or a plain string
+        # Extract status whether stored as a dict or plain string
         if isinstance(agent_record, dict):
             agent_status = agent_record.get("status", "").lower()
         else:
@@ -135,22 +275,22 @@ def decide(agent_name, action, amount, agents):
         else:
             decision, rule, reason = "BLOCK", "R7", "Unknown action"
 
-    # Automatically log the decision to audit_log.csv
+    # Automatically log every decision to audit_log.csv
     log_decision(agent_name, action, amount, decision, rule, reason)
 
     return decision, rule, reason
 
 
-# Quick demonstration of all 7 rules when run directly
+# Demonstration of rules and register/revoke lifecycle when run directly
 if __name__ == "__main__":
-    # Sample agents registry
-    agents_db = {
-        "alexa_shopper": "active",
-        "compromised_bot": "revoked",
-        "custom_agent": {"status": "active"},
-    }
+    # Ensure fresh state for test_agent if re-running test script
+    existing_agents = load_agents()
+    if "test_agent" in existing_agents:
+        del existing_agents["test_agent"]
+        save_agents(existing_agents)
 
-    # Test cases covering R1 to R7
+    # 1. Standard rule tests covering R1 to R7
+    print("=== Running Standard Gatekeeper Tests (R1 to R7) ===")
     test_cases = [
         ("unknown_agent", "view order", 0),          # R1: Unknown agent -> BLOCK
         ("compromised_bot", "view order", 0),       # R2: Revoked agent -> BLOCK
@@ -162,9 +302,29 @@ if __name__ == "__main__":
         ("alexa_shopper", "delete account", 0),     # R7: Unknown action -> BLOCK
     ]
 
-    print("--- Running Agent Gatekeeper Tests ---")
     for agent, action, amt in test_cases:
-        decision, rule, reason = decide(agent, action, amt, agents_db)
-        print(f"[{rule}] {decision:<12} | Agent: {agent:<15} | Action: {action:<14} | Amt: {amt:<5} | Reason: {reason}")
+        decision, rule, reason = decide(agent, action, amt)
+        print(f"[{rule}] {decision:<12} | Agent: {agent:<16} | Action: {action:<14} | Amt: {amt:<5} | Reason: {reason}")
 
-    print("\nAll decisions have been logged to audit_log.csv.")
+    # 2. Demo: Register -> Allow -> Revoke -> Block by R2
+    print("\n=== Demo: Register and Revoke Lifecycle ===")
+
+    # Step A: Register test_agent
+    print("1. Registering 'test_agent'...")
+    register_agent("test_agent")
+
+    # Step B: Make a request that is allowed while active
+    print("\n2. Making request while active (view order):")
+    decision, rule, reason = decide("test_agent", "view order", 0)
+    print(f"   [{rule}] {decision:<12} | Reason: {reason}")
+
+    # Step C: Revoke test_agent
+    print("\n3. Revoking 'test_agent'...")
+    revoke_agent("test_agent")
+
+    # Step D: Make the same request again (should now be blocked by R2)
+    print("\n4. Making same request after revocation (view order):")
+    decision, rule, reason = decide("test_agent", "view order", 0)
+    print(f"   [{rule}] {decision:<12} | Reason: {reason}")
+
+    print("\nAll decisions, registrations, and revocations have been logged to audit_log.csv.")

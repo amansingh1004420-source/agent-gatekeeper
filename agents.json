@@ -1,0 +1,20 @@
+{
+    "alexa_shopper": {
+        "name": "alexa_shopper",
+        "status": "active",
+        "registered_at": "2026-11-15 10:00:00",
+        "revoked_at": ""
+    },
+    "compromised_bot": {
+        "name": "compromised_bot",
+        "status": "revoked",
+        "registered_at": "2026-11-15 09:00:00",
+        "revoked_at": "2026-11-15 10:30:00"
+    },
+    "test_agent": {
+        "name": "test_agent",
+        "status": "revoked",
+        "registered_at": "2026-11-18 21:55:47",
+        "revoked_at": "2026-11-18 21:55:47"
+    }
+}
