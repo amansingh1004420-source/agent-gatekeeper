@@ -1,13 +1,15 @@
 """
 Agent Gatekeeper
 ================
-A prototype that evaluates requests from customer AI agents
+An interactive prototype that evaluates requests from customer AI agents
 and decides whether an action is ALLOW, ASK CUSTOMER, or BLOCK.
 
 Features:
 - Rules R1 to R7 for evaluation decisions
-- Audit logging to audit_log.csv
+- Customer identification on every request
+- Audit logging to audit_log.csv (including customer column)
 - Agent registry management (load, save, register, revoke) in agents.json
+- Interactive command-line menu
 """
 
 import csv
@@ -65,12 +67,13 @@ def save_agents(agents):
         json.dump(agents, f, indent=4)
 
 
-def log_decision(agent_name, action, amount, decision, rule, reason):
+def log_decision(customer, agent_name, action, amount, decision, rule, reason):
     """
     Appends one record to audit_log.csv.
     If the file does not exist yet, creates it and writes the header row first.
 
     Parameters:
+        customer (str): Name or ID of the customer.
         agent_name (str): Name or identifier of the AI agent.
         action (str): The requested action (or 'register' / 'revoke').
         amount (int or float): The transaction amount in INR (0 if not applicable).
@@ -86,10 +89,11 @@ def log_decision(agent_name, action, amount, decision, rule, reason):
     with open(AUDIT_LOG_FILE, mode="a", newline="", encoding="utf-8") as csv_file:
         writer = csv.writer(csv_file)
 
-        # Write CSV header row if the file is new
+        # Write CSV header row if the file is newly created
         if not file_exists:
             writer.writerow([
                 "date_time",
+                "customer",
                 "agent_name",
                 "action",
                 "amount",
@@ -101,6 +105,7 @@ def log_decision(agent_name, action, amount, decision, rule, reason):
         # Write data row
         writer.writerow([
             date_time,
+            customer,
             agent_name,
             action,
             amount,
@@ -144,6 +149,7 @@ def register_agent(agent_name):
 
     # Log to audit_log.csv
     log_decision(
+        customer="system",
         agent_name=agent_name,
         action="register",
         amount=0,
@@ -185,6 +191,7 @@ def revoke_agent(agent_name):
 
     # Log to audit_log.csv
     log_decision(
+        customer="system",
         agent_name=agent_name,
         action="revoke",
         amount=0,
@@ -196,13 +203,14 @@ def revoke_agent(agent_name):
     return agents[agent_name]
 
 
-def decide(agent_name, action, amount=0, agents=None):
+def decide(customer, agent_name, action, amount=0, agents=None):
     """
     Decides whether an agent's request is allowed, blocked, or requires customer confirmation.
     Loads agents from agents.json if not provided.
     Automatically logs every decision to audit_log.csv before returning.
 
     Parameters:
+        customer (str): Name or identifier of the customer.
         agent_name (str): Name or identifier of the AI agent.
         action (str): The requested action (e.g., 'view order', 'place order', 'return', 'refund').
         amount (int or float): The transaction amount in INR (defaults to 0 if not applicable).
@@ -276,35 +284,103 @@ def decide(agent_name, action, amount=0, agents=None):
             decision, rule, reason = "BLOCK", "R7", "Unknown action"
 
     # Automatically log every decision to audit_log.csv
-    log_decision(agent_name, action, amount, decision, rule, reason)
+    log_decision(customer, agent_name, action, amount, decision, rule, reason)
 
     return decision, rule, reason
 
 
-# Demonstration of rules and register/revoke lifecycle when run directly
-if __name__ == "__main__":
-    # Ensure fresh state for test_agent if re-running test script
+def show_all_agents():
+    """
+    Displays all registered agents with their name, status, registered_at, and revoked_at.
+    """
+    agents = load_agents()
+    if not agents:
+        print("\n[INFO] No agents found in registry.")
+        return
+
+    print("\n" + "=" * 80)
+    print("                           ALL REGISTERED AGENTS")
+    print("=" * 80)
+    print(f"{'Name':<20} | {'Status':<10} | {'Registered At':<20} | {'Revoked At':<20}")
+    print("-" * 80)
+    for name, data in agents.items():
+        status = data.get("status", "unknown")
+        registered_at = data.get("registered_at") or "-"
+        revoked_at = data.get("revoked_at") or "-"
+        print(f"{name:<20} | {status:<10} | {registered_at:<20} | {revoked_at:<20}")
+    print("=" * 80)
+
+
+def show_last_audit_logs(count=10):
+    """
+    Reads audit_log.csv and displays the most recent entries.
+
+    Parameters:
+        count (int): Number of recent entries to show (default: 10).
+    """
+    if not os.path.exists(AUDIT_LOG_FILE):
+        print("\n[INFO] No audit log file found yet.")
+        return
+
+    with open(AUDIT_LOG_FILE, mode="r", newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+
+    # Check if there are data rows beyond the header
+    if len(rows) <= 1:
+        print("\n[INFO] Audit log is currently empty.")
+        return
+
+    # Extract the last 'count' rows
+    data_rows = rows[1:]
+    last_entries = data_rows[-count:]
+
+    print("\n" + "=" * 115)
+    print(f"                               LAST {len(last_entries)} AUDIT LOG ENTRIES")
+    print("=" * 115)
+    print(f"{'Date/Time':<20} | {'Customer':<12} | {'Agent':<16} | {'Action':<13} | {'Amount':<7} | {'Decision':<13} | {'Rule':<4} | Reason")
+    print("-" * 115)
+
+    for row in last_entries:
+        # Safely read columns even if an older row had fewer fields
+        d_time = row[0] if len(row) > 0 else "-"
+        cust = row[1] if len(row) > 1 else "-"
+        agent = row[2] if len(row) > 2 else "-"
+        act = row[3] if len(row) > 3 else "-"
+        amt = row[4] if len(row) > 4 else "0"
+        dec = row[5] if len(row) > 5 else "-"
+        rle = row[6] if len(row) > 6 else "-"
+        rsn = row[7] if len(row) > 7 else "-"
+        print(f"{d_time:<20} | {cust:<12} | {agent:<16} | {act:<13} | {amt:<7} | {dec:<13} | {rle:<4} | {rsn}")
+
+    print("=" * 115)
+
+
+def run_tests():
+    """
+    Runs the built-in test suite covering rules R1 to R7 and the register/revoke lifecycle.
+    """
+    # Ensure fresh state for test_agent if re-running test suite
     existing_agents = load_agents()
     if "test_agent" in existing_agents:
         del existing_agents["test_agent"]
         save_agents(existing_agents)
 
     # 1. Standard rule tests covering R1 to R7
-    print("=== Running Standard Gatekeeper Tests (R1 to R7) ===")
+    print("\n=== Running Standard Gatekeeper Tests (R1 to R7) ===")
     test_cases = [
-        ("unknown_agent", "view order", 0),          # R1: Unknown agent -> BLOCK
-        ("compromised_bot", "view order", 0),       # R2: Revoked agent -> BLOCK
-        ("alexa_shopper", "view order", 0),         # R3: View order -> ALLOW
-        ("alexa_shopper", "place order", 2500),     # R4: Place order <= 5000 -> ALLOW
-        ("alexa_shopper", "return", 5000),          # R4: Return <= 5000 -> ALLOW
-        ("alexa_shopper", "place order", 12000),    # R5: Place order > 5000 -> ASK CUSTOMER
-        ("alexa_shopper", "refund", 500),           # R6: Refund -> ASK CUSTOMER
-        ("alexa_shopper", "delete account", 0),     # R7: Unknown action -> BLOCK
+        ("Alice", "unknown_agent", "view order", 0),          # R1: Unknown agent -> BLOCK
+        ("Bob", "compromised_bot", "view order", 0),          # R2: Revoked agent -> BLOCK
+        ("Charlie", "alexa_shopper", "view order", 0),        # R3: View order -> ALLOW
+        ("David", "alexa_shopper", "place order", 2500),      # R4: Place order <= 5000 -> ALLOW
+        ("Emma", "alexa_shopper", "return", 5000),            # R4: Return <= 5000 -> ALLOW
+        ("Frank", "alexa_shopper", "place order", 12000),     # R5: Place order > 5000 -> ASK CUSTOMER
+        ("Grace", "alexa_shopper", "refund", 500),            # R6: Refund -> ASK CUSTOMER
+        ("Heidi", "alexa_shopper", "delete account", 0),      # R7: Unknown action -> BLOCK
     ]
 
-    for agent, action, amt in test_cases:
-        decision, rule, reason = decide(agent, action, amt)
-        print(f"[{rule}] {decision:<12} | Agent: {agent:<16} | Action: {action:<14} | Amt: {amt:<5} | Reason: {reason}")
+    for customer, agent, action, amt in test_cases:
+        decision, rule, reason = decide(customer, agent, action, amt)
+        print(f"[{rule}] {decision:<12} | Customer: {customer:<8} | Agent: {agent:<16} | Action: {action:<14} | Amt: {amt:<5} | Reason: {reason}")
 
     # 2. Demo: Register -> Allow -> Revoke -> Block by R2
     print("\n=== Demo: Register and Revoke Lifecycle ===")
@@ -315,7 +391,7 @@ if __name__ == "__main__":
 
     # Step B: Make a request that is allowed while active
     print("\n2. Making request while active (view order):")
-    decision, rule, reason = decide("test_agent", "view order", 0)
+    decision, rule, reason = decide("DemoCustomer", "test_agent", "view order", 0)
     print(f"   [{rule}] {decision:<12} | Reason: {reason}")
 
     # Step C: Revoke test_agent
@@ -324,7 +400,134 @@ if __name__ == "__main__":
 
     # Step D: Make the same request again (should now be blocked by R2)
     print("\n4. Making same request after revocation (view order):")
-    decision, rule, reason = decide("test_agent", "view order", 0)
+    decision, rule, reason = decide("DemoCustomer", "test_agent", "view order", 0)
     print(f"   [{rule}] {decision:<12} | Reason: {reason}")
 
     print("\nAll decisions, registrations, and revocations have been logged to audit_log.csv.")
+
+
+def main_menu():
+    """
+    Displays the interactive text menu and handles user choices safely in a loop.
+    """
+    # Print the required startup header
+    print("Agent Gatekeeper - Amazon")
+    print("Enrolment No: PGD202570947")
+
+    while True:
+        print("\n" + "=" * 45)
+        print("                  MAIN MENU")
+        print("=" * 45)
+        print("1. Send a request")
+        print("2. Register an agent")
+        print("3. Revoke an agent")
+        print("4. Show all agents (name, status, registered_at, revoked_at)")
+        print("5. Show last 10 audit log entries")
+        print("6. Run the built-in test cases")
+        print("7. Exit")
+        print("=" * 45)
+
+        try:
+            choice = input("Enter your choice (1-7): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nExiting Agent Gatekeeper. Goodbye!")
+            break
+
+        # Option 1: Send a request
+        if choice == "1":
+            print("\n--- Send a Request ---")
+            try:
+                customer = input("Enter customer name: ").strip()
+                if not customer:
+                    customer = "Unknown Customer"
+
+                agent_name = input("Enter agent name: ").strip()
+                if not agent_name:
+                    print("[ERROR] Agent name cannot be empty.")
+                    continue
+
+                action = input("Enter action (e.g., view order, place order, return, refund): ").strip()
+                if not action:
+                    print("[ERROR] Action cannot be empty.")
+                    continue
+
+                amount_input = input("Enter amount in INR (e.g., 2500 or 0): ").strip()
+                # Safely convert amount to float, handling invalid input
+                try:
+                    amount = float(amount_input) if amount_input else 0.0
+                    if amount < 0:
+                        print("[WARNING] Negative amount entered. Defaulting to 0.")
+                        amount = 0.0
+                except ValueError:
+                    print("[ERROR] Invalid amount! Please enter a valid number (e.g., 500, 2500.50).")
+                    continue
+
+                # Run decision
+                decision, rule, reason = decide(customer, agent_name, action, amount)
+
+                print("\n" + "-" * 40)
+                print("               DECISION")
+                print("-" * 40)
+                print(f"Customer:    {customer}")
+                print(f"Agent Name:  {agent_name}")
+                print(f"Action:      {action}")
+                print(f"Amount:      {amount} INR")
+                print(f"Decision:    {decision}")
+                print(f"Rule Number: {rule}")
+                print(f"Reason:      {reason}")
+                print("-" * 40)
+
+            except (KeyboardInterrupt, EOFError):
+                print("\nRequest cancelled.")
+                continue
+
+        # Option 2: Register an agent
+        elif choice == "2":
+            print("\n--- Register an Agent ---")
+            try:
+                agent_name = input("Enter agent name to register: ").strip()
+                if not agent_name:
+                    print("[ERROR] Agent name cannot be empty.")
+                    continue
+                register_agent(agent_name)
+            except (KeyboardInterrupt, EOFError):
+                print("\nRegistration cancelled.")
+                continue
+
+        # Option 3: Revoke an agent
+        elif choice == "3":
+            print("\n--- Revoke an Agent ---")
+            try:
+                agent_name = input("Enter agent name to revoke: ").strip()
+                if not agent_name:
+                    print("[ERROR] Agent name cannot be empty.")
+                    continue
+                revoke_agent(agent_name)
+            except (KeyboardInterrupt, EOFError):
+                print("\nRevocation cancelled.")
+                continue
+
+        # Option 4: Show all agents
+        elif choice == "4":
+            show_all_agents()
+
+        # Option 5: Show last 10 audit log entries
+        elif choice == "5":
+            show_last_audit_logs(10)
+
+        # Option 6: Run built-in test cases
+        elif choice == "6":
+            run_tests()
+
+        # Option 7: Exit
+        elif choice == "7":
+            print("\nExiting Agent Gatekeeper. Goodbye!")
+            break
+
+        # Invalid menu selection
+        else:
+            print("\n[ERROR] Invalid choice. Please enter a number between 1 and 7.")
+
+
+if __name__ == "__main__":
+    main_menu()

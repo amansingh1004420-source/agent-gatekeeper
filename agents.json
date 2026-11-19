@@ -16,5 +16,11 @@
         "status": "revoked",
         "registered_at": "2026-11-18 21:55:47",
         "revoked_at": "2026-11-18 21:55:47"
+    },
+    "shop_helper": {
+        "name": "shop_helper",
+        "status": "revoked",
+        "registered_at": "2026-11-19 15:11:20",
+        "revoked_at": "2026-11-19 15:12:11"
     }
 }
